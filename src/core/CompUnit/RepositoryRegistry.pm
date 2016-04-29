@@ -11,18 +11,20 @@ class CompUnit::RepositoryRegistry {
         state %include-spec2cur;
         state $lock = Lock.new;
 
-        my ($short-id,%options,$path) := parse-include-spec($spec);
-        my $class = short-id2class($short-id);
-        die "No class loaded for short-id '$short-id': $spec -> $path"
+        # my ($short-id,%options,$path) := parse-include-spec($spec);
+        # my $class = short-id2class($short-id);
+        my $rspec = CompUnit::RepositorySpecification.parse($spec);
+        my $class = $next-repo.need-repository($rspec); # Implement in CURs
+        die "No class loaded for short-id '$rspec.short-id()': $spec -> $rspec.path()"
           if $class === Any;
 
-        my $abspath = $class.?absolutify($path) // $path;
-        my $id      = "$short-id#$abspath";
+        my $abspath = $class.?absolutify($rspec.path) // $rspec.path;
+        my $id      = "$rspec.short-id()#$abspath";
         %options<next-repo> = $next-repo if $next-repo;
         $lock.protect( {
             %include-spec2cur{$id}:exists
               ?? %include-spec2cur{$id}
-              !! (%include-spec2cur{$id} := $class.new(:prefix($abspath), |%options));
+              !! (%include-spec2cur{$id} := $class.new(:prefix($abspath), |$rspec.options));
         } );
     }
 
@@ -43,23 +45,23 @@ class CompUnit::RepositoryRegistry {
         else {
             $raw-specs := nqp::list();
             for Rakudo::Internals.INCLUDE -> $specs {
-               nqp::push($raw-specs,nqp::unbox_s($_))
-                 for parse-include-specS($specs);
+               nqp::push($raw-specs,nqp::unbox_s(~$_))
+                 for CompUnit::RepositorySpecification.parse-all($specs);
             }
 
             if nqp::existskey($ENV,'RAKUDOLIB') {
-                nqp::push($raw-specs,nqp::unbox_s($_))
-                  for parse-include-specS(nqp::atkey($ENV,'RAKUDOLIB'));
+                nqp::push($raw-specs,nqp::unbox_s(~$_))
+                  for CompUnit::RepositorySpecification.parse-all(nqp::atkey($ENV,'RAKUDOLIB'));
             }
             if nqp::existskey($ENV,'PERL6LIB') {
-                nqp::push($raw-specs,nqp::unbox_s($_))
-                  for parse-include-specS(nqp::atkey($ENV,'PERL6LIB'));
+                nqp::push($raw-specs,nqp::unbox_s(~$_))
+                  for CompUnit::RepositorySpecification.parse-all(nqp::atkey($ENV,'PERL6LIB'));
             }
 
 #?if jvm
             for nqp::hllize(nqp::jvmclasspaths()) -> $path {
-                nqp::push($raw-specs,nqp::unbox_s($_))
-                  for parse-include-specS($path);
+                nqp::push($raw-specs,nqp::unbox_s(~$_))
+                  for CompUnit::RepositorySpecification.parse-all($path);
             }
 #?endif
 
@@ -243,53 +245,13 @@ class CompUnit::RepositoryRegistry {
         );
     }
 
-# prime the short-id -> class lookup
+    # prime the short-id -> class lookup
     short-id2class('file')  = 'CompUnit::Repository::FileSystem';
     short-id2class('inst')  = 'CompUnit::Repository::Installation';
     short-id2class('ap')    = 'CompUnit::Repository::AbsolutePath';
     short-id2class('nqp')   = 'CompUnit::Repository::NQP';
     short-id2class('perl5') = 'CompUnit::Repository::Perl5';
 
-    sub parse-include-spec(Str:D $spec, Str:D $default-short-id = 'file') {
-        my %options;
-
-        # something we understand
-        if $spec ~~ /^
-          [
-            $<type>=[ <.ident>+ % '::' ]
-            [ '#' $<n>=\w+
-              <[ < ( [ { ]> $<v>=<[\w-]>+ <[ > ) \] } ]>
-              { %options{$<n>} = ~$<v> }
-            ]*
-            '#'
-          ]?
-          $<path>=.*
-        $/ {
-            ( $<type> ?? ~$<type> !! $default-short-id, %options, ~$<path> );
-        }
-    }
-
-    sub parse-include-specS(Str:D $specs) {
-        my @found;
-        my $default-short-id = 'file';
-
-        if $*RAKUDO_MODULE_DEBUG -> $RMD { $RMD("Parsing specs: $specs") }
-
-        # for all possible specs
-        for $specs.split(/ \s* ',' \s* /) -> $spec {
-            if parse-include-spec($spec, $default-short-id) -> $triplet {
-                @found.push: join "#",
-                  $triplet[0],
-                  $triplet[1].map({ .key ~ "<" ~ .value ~ ">" }),
-                  $triplet[2];
-                $default-short-id = $triplet[0];
-            }
-            elsif $spec {
-                die "Don't know how to handle $spec";
-            }
-        }
-        @found;
-    }
 }
 
 # vim: ft=perl6 expandtab sw=4

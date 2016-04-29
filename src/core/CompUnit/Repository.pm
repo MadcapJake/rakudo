@@ -11,6 +11,10 @@ role CompUnit::Repository {
         returns CompUnit:D
         { ... }
 
+    method need-repository(CompUnit::RepositorySpecification $spec)
+        returns CompUnit::Repository:D
+        { ... }
+
     # Resolves a dependency specification to a concrete dependency.
     # Returns a CompUnit object that represents the selected dependency.
     # If there is no matching dependency, Nil is returned.
