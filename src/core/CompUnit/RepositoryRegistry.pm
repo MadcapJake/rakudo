@@ -4,7 +4,6 @@ class CompUnit::Repository::AbsolutePath { ... }
 class CompUnit::Repository::NQP { ... }
 class CompUnit::Repository::Perl5 { ... }
 class CompUnit::Repository::Unknown { ... }
-use nqp;
 class CompUnit::RepositoryRegistry {
     my $lock     = Lock.new;
 
@@ -171,7 +170,7 @@ class CompUnit::RepositoryRegistry {
                 unless $repo.isa(CompUnit::Repository::Unknown) {
                     # rebind resolved CUR to $repos
                     # XXX: Relying on path-spec seems risky
-                    nqp::bindkey($repos, $repo.path-spec, $repo)
+                    nqp::bindkey($repos, $repo.path-spec, $repo);
                     # remove from $curus
                     $curus := nqp::splice($curus, nqp::list(), $cursor, 1);
                     # mark that a new repo has been added

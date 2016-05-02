@@ -9,11 +9,6 @@ class CompUnit::Repository::AbsolutePath does CompUnit::Repository {
         X::CompUnit::UnsatisfiedDependency.new(:specification($spec)).throw;
     }
 
-    method need-repository(CompUnit::RepositorySpecification $spec) {
-        return self.next-repo.need-repository($spec) if self.next-repo;
-        CompUnit::Repository::Unknown
-    }
-
     method load(IO::Path:D $file) returns CompUnit:D {
         if $file.is-absolute {
 

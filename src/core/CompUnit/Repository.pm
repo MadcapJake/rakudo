@@ -1,4 +1,4 @@
-class CompUnit::RepositorySpecification { ... }
+# class CompUnit::RepositorySpecification { ... }
 role CompUnit::Repository {
     has CompUnit::Repository $.next-repo is rw;
 
@@ -12,9 +12,16 @@ role CompUnit::Repository {
         returns CompUnit:D
         { ... }
 
+    # Resolves a repository specification to a repository class. The default
+    # implementation passes the buck or returns CURU.  CURUs are handled
+    # specially within CompUnit::RepositoryRegistry.setup-repositories.
     method need-repository(CompUnit::RepositorySpecification $spec)
-        returns CompUnit::Repository:D
-        { ... }
+        returns CompUnit::Repository:U
+    {
+        return self.next-repo.need-repository($spec) if self.next-repo;
+        CompUnit::Repository::Unknown
+    }
+
 
     # Resolves a dependency specification to a concrete dependency.
     # Returns a CompUnit object that represents the selected dependency.

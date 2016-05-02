@@ -13,11 +13,6 @@ class CompUnit::Repository::Unknown does CompUnit::Repository {
       X::CompUnit::UnsatisfiedDependency.new(:specification($spec)).throw;
     }
 
-    method need-repository(CompUnit::RepositorySpecification $spec) {
-      return self.next-repo.need-repository($spec) if self.next-repo;
-      CompUnit::Repository::Unknown
-    }
-
     # Returns empty array as CURUs cannot return CUs
     method loaded()
       returns Iterable

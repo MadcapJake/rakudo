@@ -127,6 +127,14 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
         }
     }
 
+    method !remove-repo-from-short-id-lookup-files($dist) {
+        my $sid-dir = $.prefix.child('repositories');
+        return unless $sid-dir.e;
+
+        my $id = $dist.id
+        for $sid-dir.dir -> $dir { $dir.child($id).unlink }
+    }
+
     method !file-id(Str $name, Str $dist-id) {
         my $id = $name ~ $dist-id;
         nqp::sha1($id)
@@ -211,8 +219,12 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
         }
 
         for %repositories.kv -> $short-id, $name {
-            my $destination = $repositories-dir.child($short-id);
-            $destination.spurt($name, :createonly)
+            my $repo-dir = $.prefix.child('repositories');
+            $repo-dir.mkdir unless $repo-dir.e;
+            my $sid-dir = $repo-dir.child($short-id);
+            $sid-dir.mkdir unless $sid-dir.e;
+            $sid-dir.child($dist-id).spurt:
+                "{$dist.ver // ''}\n{$dist.auth // ''}\n{$dist.api // ''}\n"
         }
 
         $dist-dir.child($dist-id).spurt: to-json($dist.Hash);
@@ -275,10 +287,10 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
         my $dist-dir         = self.prefix.child('dist');
 
         self!remove-dist-from-short-name-lookup-files($dist);
+        self!remove-repo-from-short-id-lookup-files($dist);
         $bin-dir.child($_.value).unlink for %files.grep: {$_.key ~~ /^bin\//};
         $sources-dir.child($_).unlink for %provides.map(*.value<pm><file>);
         $resources-dir.child($_).unlink for %files.values;
-        $repositories-dir.child($_).unlink for %repositories.keys;
         $dist-dir.child($dist.id).unlink;
     }
 
@@ -400,6 +412,7 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
 
     method need-repository(CompUnit::RepositorySpecification $spec) {
         my $repository = $.prefix.child('repositories').child($spec.short-id);
+        # TODO: Need some way to decide on which repo inside the sid-dir to pick
         return self.need(CompUnit::DependencySpecification(short-name => $repository.slurp))
             if $repository.e;
         return self.next-repo.need-repository($spec) if self.next-repo;

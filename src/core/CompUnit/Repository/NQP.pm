@@ -21,12 +21,6 @@ class CompUnit::Repository::NQP does CompUnit::Repository {
         X::CompUnit::UnsatisfiedDependency.new(:specification($spec)).throw;
     }
 
-    method need-repository(CompUnit::RepositorySpecification $spec) {
-        # TODO: Implement if possible
-        return self.next-repo.need-repository($spec) if self.next-repo;
-        CompUnit::Repository::Unknown
-    }
-
     method loaded() {
         []
     }
