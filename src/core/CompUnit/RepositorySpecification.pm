@@ -1,35 +1,33 @@
 class CompUnit::RepositorySpecification {
     has Str:D $.short-id is required;
-    has Str:D $.path is required;
+    has Str:D $.url is required;
     has %.options;
 
     method Str(CompUnit::RepositorySpecification:D:) {
         join '#', $!short-id,
-            |("$^a[$^b]"for %!options.kv),
-            $!path;
+            |("$_.key()[$_.key()]" for %!options.pairs),
+            $!url;
     }
 
     method parse(CompUnit::RepositorySpecification:U:
         Str:D $spec,
-        Str:D $defualt-short-id = 'file'
+        Str:D $default-short-id = 'file'
     ) returns CompUnit::RepositorySpecification:D {
         my %options;
 
-        if $spec ~~ m|^
-          [
+        if $spec ~~ /
+          ^ [
             $<type>=[ <.ident>+ % '::' ]
             [ '#' $<n>=\w+
               <[ < ( [ { ]> $<v>=<[\w-]>+ <[ > ) \] } ]>
               { %options{$<n>} = ~$<v> }
-            ]*
-            '#'
-          ]?
-          $<path>=.*
-        $| {
+            ]*'#'
+          ]? $<url>=.* $
+        / {
             self.bless:
                 :short-id($<type> ?? ~$<type> !! $default-short-id)
                 :%options
-                :path(~$<path>)
+                :url($<url>.Str)
         }
     }
 

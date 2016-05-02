@@ -95,6 +95,12 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
         $bin
     }
 
+    method !repositories-dir() {
+        my $repositories = $.prefix.child('repositories');
+        $repositories.mkdir unless $repositories.e;
+        $repositories
+    }
+
     method !add-short-name($name, $dist) {
         my $short-dir = $.prefix.child('short');
         $short-dir.mkdir unless $short-dir.e;
@@ -133,7 +139,7 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
         $repo-prefix
     }
 
-    method install(Distribution $dist, %sources, %scripts?, %resources?, :$force) {
+    method install(Distribution $dist, %sources, %scripts?, %resources?, %repositories?, :$force) {
         $!lock.protect( {
         my @*MODULES;
         my $path   = self!writeable-path or die "No writeable path found, $.prefix not writeable";
@@ -147,10 +153,11 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
             fail "$dist already installed";
         }
 
-        my $sources-dir   = self!sources-dir;
-        my $resources-dir = self!resources-dir;
-        my $bin-dir       = self!bin-dir;
-        my $is-win        = Rakudo::Internals.IS-WIN;
+        my $sources-dir      = self!sources-dir;
+        my $resources-dir    = self!resources-dir;
+        my $bin-dir          = self!bin-dir;
+        my $repositories-dir = self!repositories-dir;
+        my $is-win           = Rakudo::Internals.IS-WIN;
 
         self!add-short-name($dist.name, $dist); # so scripts can find their dist
 
@@ -203,6 +210,11 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
             copy($file, $destination);
         }
 
+        for %repositories.kv -> $short-id, $name {
+            my $destination = $repositories-dir.child($short-id);
+            $destination.spurt($name, :createonly)
+        }
+
         $dist-dir.child($dist-id).spurt: to-json($dist.Hash);
 
         my $precomp = $*REPO.precomp-repository;
@@ -253,17 +265,20 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
     } ) }
 
     method uninstall(Distribution $dist) {
-        my %provides      = $dist.provides;
-        my %files         = $dist.files;
-        my $sources-dir   = self.prefix.child('sources');
-        my $resources-dir = self.prefix.child('resources');
-        my $bin-dir       = self.prefix.child('bin');
-        my $dist-dir      = self.prefix.child('dist');
+        my %provides         = $dist.provides;
+        my %files            = $dist.files;
+        my %repositories     = $dist.repositories; # TODO: Add to Dist
+        my $sources-dir      = self.prefix.child('sources');
+        my $resources-dir    = self.prefix.child('resources');
+        my $bin-dir          = self.prefix.child('bin');
+        my $repositories-dir = self.prefix.child('repositories');
+        my $dist-dir         = self.prefix.child('dist');
 
         self!remove-dist-from-short-name-lookup-files($dist);
         $bin-dir.child($_.value).unlink for %files.grep: {$_.key ~~ /^bin\//};
         $sources-dir.child($_).unlink for %provides.map(*.value<pm><file>);
         $resources-dir.child($_).unlink for %files.values;
+        $repositories-dir.child($_).unlink for %repositories.keys;
         $dist-dir.child($dist.id).unlink;
     }
 
@@ -381,6 +396,14 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
         }
         return self.next-repo.need($spec, $precomp) if self.next-repo;
         X::CompUnit::UnsatisfiedDependency.new(:specification($spec)).throw;
+    }
+
+    method need-repository(CompUnit::RepositorySpecification $spec) {
+        my $repository = $.prefix.child('repositories').child($spec.short-id);
+        return self.need(CompUnit::DependencySpecification(short-name => $repository.slurp))
+            if $repository.e;
+        return self.next-repo.need-repository($spec) if self.next-repo;
+        CompUnit::Repository::Unknown
     }
 
     method resource($dist-id, $key) {

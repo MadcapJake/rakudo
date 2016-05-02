@@ -92,6 +92,26 @@ class CompUnit::Repository::FileSystem does CompUnit::Repository::Locally does C
         X::CompUnit::UnsatisfiedDependency.new(:specification($spec)).throw;
     }
 
+    method need-repository(CompUnit::RepositorySpecification $spec) {
+        if (my $meta = $!prefix.child('META6.json')) && $meta.f {
+            try {
+                my $json = from-json $meta.slurp;
+                if $json<provides-repository>{$spec.short-id} -> $name {
+                    return self.need:
+                        CompUnit::DependencySpecification.new(short-name => $name)
+                }
+
+                CATCH {
+                    when JSONException {
+                        fail "Invalid JSON found in META6.json";
+                    }
+                }
+            }
+        }
+        return self.next-repo.need-repository($spec) if self.next-repo;
+        CompUnit::Repository::Unknown
+    }
+
     method load(IO::Path:D $file) returns CompUnit:D {
         unless $file.is-absolute {
 

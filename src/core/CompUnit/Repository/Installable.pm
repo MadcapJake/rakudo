@@ -1,7 +1,7 @@
 role CompUnit::Repository::Installable does CompUnit::Repository {
     # Installs a distribution into the repository.
     method install(
-        # A Distribution object 
+        # A Distribution object
         Distribution $dist,
         # A hash mapping entries in `provides` to a disk location that
         # holds the source files; they will be copied (and may also be
@@ -10,7 +10,11 @@ role CompUnit::Repository::Installable does CompUnit::Repository {
         %scripts?,
         # A hash mapping entries in the `resources` to a disk location
         # that holds the files; again, these will be copied and stored.
-        %resources?)
+        %resources?,
+        # A hash mapping repository short-ids to the short-name of a
+        # CompUnit::Repository implementation.
+        %repositories?
+        )
         { ... }
 
     # Returns True if we can install modules (this will typically do a

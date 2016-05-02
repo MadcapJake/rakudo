@@ -3,7 +3,8 @@ class CompUnit::Repository::Installation { ... }
 class CompUnit::Repository::AbsolutePath { ... }
 class CompUnit::Repository::NQP { ... }
 class CompUnit::Repository::Perl5 { ... }
-
+class CompUnit::Repository::Unknown { ... }
+use nqp;
 class CompUnit::RepositoryRegistry {
     my $lock     = Lock.new;
 
@@ -15,12 +16,16 @@ class CompUnit::RepositoryRegistry {
         # my $class = short-id2class($short-id);
         my $rspec = CompUnit::RepositorySpecification.parse($spec);
         my $class = $next-repo.need-repository($rspec); # Implement in CURs
-        die "No class loaded for short-id '$rspec.short-id()': $spec -> $rspec.path()"
-          if $class === Any;
 
-        my $abspath = $class.?absolutify($rspec.path) // $rspec.path;
+        # NOTE: Not needed as chain's end should return CURU
+        # die "No class loaded for short-id '$rspec.short-id()': $spec -> $rspec.url()"
+        # $class = CompUnit::Repository::Unknown.new($rspec, $next-repo)
+        #     if $class === Any;
+
+        my $abspath = $class.?absolutify($rspec.url) // $rspec.url;
         my $id      = "$rspec.short-id()#$abspath";
-        %options<next-repo> = $next-repo if $next-repo;
+        $rspec.options<next-repo> = $next-repo if $next-repo;
+        $rspec.options<spec> = $rspec if $class === CompUnit::Repository::Unknown;
         $lock.protect( {
             %include-spec2cur{$id}:exists
               ?? %include-spec2cur{$id}
@@ -45,22 +50,22 @@ class CompUnit::RepositoryRegistry {
         else {
             $raw-specs := nqp::list();
             for Rakudo::Internals.INCLUDE -> $specs {
-               nqp::push($raw-specs,nqp::unbox_s(~$_))
+               nqp::push($raw-specs,nqp::unbox_s($_.Str))
                  for CompUnit::RepositorySpecification.parse-all($specs);
             }
 
             if nqp::existskey($ENV,'RAKUDOLIB') {
-                nqp::push($raw-specs,nqp::unbox_s(~$_))
+                nqp::push($raw-specs,nqp::unbox_s($_.Str))
                   for CompUnit::RepositorySpecification.parse-all(nqp::atkey($ENV,'RAKUDOLIB'));
             }
             if nqp::existskey($ENV,'PERL6LIB') {
-                nqp::push($raw-specs,nqp::unbox_s(~$_))
+                nqp::push($raw-specs,nqp::unbox_s($_.Str))
                   for CompUnit::RepositorySpecification.parse-all(nqp::atkey($ENV,'PERL6LIB'));
             }
 
 #?if jvm
             for nqp::hllize(nqp::jvmclasspaths()) -> $path {
-                nqp::push($raw-specs,nqp::unbox_s(~$_))
+                nqp::push($raw-specs,nqp::unbox_s($_.Str))
                   for CompUnit::RepositorySpecification.parse-all($path);
             }
 #?endif
@@ -137,11 +142,14 @@ class CompUnit::RepositoryRegistry {
         # convert path-specs to repos
         $iter := nqp::iterator($specs);
         my $repos := nqp::hash();
+        my $curus := nqp::list();
         while $iter {
             my str $spec = nqp::shift($iter);
-            $next-repo := self.use-repository(
-              self.repository-for-spec($spec), :current($next-repo));
-            nqp::bindkey($repos,$spec,$next-repo);
+            my $repo := self.repository-for-spec($spec);
+            nqp::unshift($curus,$repo)
+                if $repo.isa(CompUnit::Repository::Unknown);
+            $next-repo := self.use-repository($repo, :current($next-repo));
+            nqp::bindkey($repos,$spec,$repo);
         }
 
         # convert custom-lib path-specs to repos
@@ -150,6 +158,33 @@ class CompUnit::RepositoryRegistry {
             my \pair = nqp::shift($iter);
             nqp::bindkey($custom-lib,nqp::iterkey_s(pair),
               nqp::atkey($repos,normalize(nqp::iterval(pair))));
+        }
+
+        # traverse CURUs for any new matches
+        my $fresh = False;
+        repeat {
+            $iter := nqp::iterator($curus);
+            my $cursor = 0;
+            while $iter {
+                my $curu := nqp::shift($iter);
+                my $repo := $next-repo.need-repository($curu.spec.Str);
+                unless $repo.isa(CompUnit::Repository::Unknown) {
+                    # rebind resolved CUR to $repos
+                    # XXX: Relying on path-spec seems risky
+                    nqp::bindkey($repos, $repo.path-spec, $repo)
+                    # remove from $curus
+                    $curus := nqp::splice($curus, nqp::list(), $cursor, 1);
+                    # mark that a new repo has been added
+                    $fresh = True;
+                }
+                $cursor++
+            }
+        } while $fresh && $curus;
+
+        if $curus {
+            warn  "There are unknown repositories that have not been "
+            ~ "resolved:\n\t"
+            ~ join("\n\t", $curus.map(*.spec.Str));
         }
 
         $next-repo
@@ -208,49 +243,6 @@ class CompUnit::RepositoryRegistry {
             # now, we let it pass by with "latest wins" semantics.
         }
     }
-
-    sub short-id2class(Str:D $short-id) {
-        state %short-id2class;
-        state $lock = Lock.new;
-
-        Proxy.new(
-          FETCH => {
-              $lock.protect( {
-                  if %short-id2class.EXISTS-KEY($short-id) {
-                      %short-id2class.AT-KEY($short-id);
-                  }
-                  else {
-                      my $type = try ::($short-id);
-                      if $type !=== Any {
-                          if $type.?short-id -> $id {
-                              die "Have '$id' already registered for %short-id2class{$id}.^name()"
-                                if %short-id2class.EXISTS-KEY($id);
-                              %short-id2class.BIND-KEY($id,$type);
-                          }
-                          else {
-                              die "Class '$type.^name()' is not a CompUnit::Repository";
-                          }
-                      }
-                      else {
-                          die "No CompUnit::Repository known by '$short-id'";
-                      }
-                  }
-              } );
-          },
-          STORE => -> $, $class {
-              my $type = ::($class);
-              die "Must load class '$class' first" if nqp::istype($type,Failure);
-              $lock.protect( { %short-id2class{$short-id} := $type } );
-          },
-        );
-    }
-
-    # prime the short-id -> class lookup
-    short-id2class('file')  = 'CompUnit::Repository::FileSystem';
-    short-id2class('inst')  = 'CompUnit::Repository::Installation';
-    short-id2class('ap')    = 'CompUnit::Repository::AbsolutePath';
-    short-id2class('nqp')   = 'CompUnit::Repository::NQP';
-    short-id2class('perl5') = 'CompUnit::Repository::Perl5';
 
 }
 
