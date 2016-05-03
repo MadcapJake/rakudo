@@ -1,4 +1,4 @@
-# class CompUnit::RepositorySpecification { ... }
+class CompUnit::RepositorySpecification { ... }
 role CompUnit::Repository {
     has CompUnit::Repository $.next-repo is rw;
 

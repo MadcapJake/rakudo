@@ -12,6 +12,23 @@ class CompUnit::DependencySpecification {
           ($.auth-matcher   //True) ~~ Bool ?? '' !! ":auth<$.auth-matcher>",
           ($.api-matcher    //True) ~~ Bool ?? '' !! ":api<$.api-matcher>";
     }
+
+    method parse-rep-spec(CompUnit::DependencySpecification:U: Str:D $spec)
+        returns CompUnit::DependencySpecification:D
+    {
+        my %options;
+        m/
+            $<short>= [ <.ident>+ % '::' ]
+            [ ':' $<n>=\w+
+                <[ < ( [ { ]> $<v>=<[\w\-.*:]>+ <[ > ) \] } ]>
+                { %options{$<n>} = ~$<v> }
+            ]*
+        /;
+        CompUnit::DependencySpecification.new:
+            :short-name($<short>)
+            :version-matcher(%options<ver> // %options<version>)
+            :auth-matcher(%options<auth> // %options<author> // %options<authority>);
+    }
 }
 
 # vim: ft=perl6 expandtab sw=4

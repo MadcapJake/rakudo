@@ -9,20 +9,26 @@ class CompUnit::RepositorySpecification {
             $!url;
     }
 
+    method WHICH(CompUnit::RepositorySpecification:D:
+        CompUnit::DependencySpecification $dep
+    ) {
+        %options<auth> ~~ $dep.auth-matcher
+        and Version.new(~%options<ver> || '0') ~~ $dep.version-matcher
+    }
+
     method parse(CompUnit::RepositorySpecification:U:
         Str:D $spec,
         Str:D $default-short-id = 'file'
     ) returns CompUnit::RepositorySpecification:D {
         my %options;
-
         if $spec ~~ /
-          ^ [
-            $<type>=[ <.ident>+ % '::' ]
-            [ '#' $<n>=\w+
-              <[ < ( [ { ]> $<v>=<[\w-]>+ <[ > ) \] } ]>
-              { %options{$<n>} = ~$<v> }
-            ]*'#'
-          ]? $<url>=.* $
+            ^ [
+                $<type>=[ <.ident>+ % '::' ]
+                [ '#' $<n>=\w+
+                    <[ < ( [ { ]> $<v>=<[\w\-.*:]>+ <[ > ) \] } ]>
+                    { %options{$<n>} = ~$<v> }
+                ]*'#'
+            ]? $<url>=.* $
         / {
             self.bless:
                 :short-id($<type> ?? ~$<type> !! $default-short-id)

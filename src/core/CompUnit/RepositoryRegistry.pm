@@ -166,10 +166,10 @@ class CompUnit::RepositoryRegistry {
             my $cursor = 0;
             while $iter {
                 my $curu := nqp::shift($iter);
-                my $repo := $next-repo.need-repository($curu.spec.Str);
+                my $repo := $next-repo.need-repository($curu.spec);
                 unless $repo.isa(CompUnit::Repository::Unknown) {
                     # rebind resolved CUR to $repos
-                    # XXX: Relying on path-spec seems risky
+                    # TODO: Add default path-spec impl to CUR
                     nqp::bindkey($repos, $repo.path-spec, $repo);
                     # remove from $curus
                     $curus := nqp::splice($curus, nqp::list(), $cursor, 1);

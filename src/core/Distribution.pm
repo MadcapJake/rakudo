@@ -9,6 +9,7 @@ class Distribution {
     has $.description;
     has @.depends;
     has %.provides;
+    has %.repositories;
     has %.files;
     has $.source-url;
     method auth { $!auth // $!author // $!authority }
@@ -21,6 +22,7 @@ class Distribution {
             :$!description,
             :@!depends,
             :%!provides,
+            :%!repositories,
             :%!files,
             :$!source-url,
         }

@@ -127,12 +127,15 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
         }
     }
 
-    method !remove-repo-from-short-id-lookup-files($dist) {
-        my $sid-dir = $.prefix.child('repositories');
-        return unless $sid-dir.e;
-
-        my $id = $dist.id
-        for $sid-dir.dir -> $dir { $dir.child($id).unlink }
+    method !remove-repo-from-short-id-lookup-file(
+        Str:D $short-id,
+        CompUnit::RepositorySpecification:D $rspec
+    ) {
+        my $short-file = $.prefix.child('repositories').child($short-id);
+        my @repos = $short-file.lines;
+        my $i = @repos.first($rspec === CompUnit::DependencySpecification.parse-rep-spec(*)):k;
+        @repos[$i]:delete;
+        spurt $short-file, join("\n", @repos)
     }
 
     method !file-id(Str $name, Str $dist-id) {
@@ -219,11 +222,9 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
         }
 
         for %repositories.kv -> $short-id, $name {
-            my $repo-dir = $.prefix.child('repositories');
-            $repo-dir.mkdir unless $repo-dir.e;
-            my $sid-dir = $repo-dir.child($short-id);
-            $sid-dir.mkdir unless $sid-dir.e;
-            $sid-dir.child($dist-id).spurt:
+            my $short-list = $repositories-dir.child($short-id).open(:a);
+            $dist.repositories{$short-id} = $name;
+            $short-list.say:
                 "{$dist.ver // ''}\n{$dist.auth // ''}\n{$dist.api // ''}\n"
         }
 
@@ -279,15 +280,16 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
     method uninstall(Distribution $dist) {
         my %provides         = $dist.provides;
         my %files            = $dist.files;
-        my %repositories     = $dist.repositories; # TODO: Add to Dist
+        my %repositories     = $dist.repositories;
         my $sources-dir      = self.prefix.child('sources');
         my $resources-dir    = self.prefix.child('resources');
         my $bin-dir          = self.prefix.child('bin');
-        my $repositories-dir = self.prefix.child('repositories');
         my $dist-dir         = self.prefix.child('dist');
 
         self!remove-dist-from-short-name-lookup-files($dist);
-        self!remove-repo-from-short-id-lookup-files($dist);
+        self!remove-repo-from-short-id-lookup-file($_.key,
+            CompUnit::RepositorySpecification.parse($_.value))
+            for %repositories.pairs;
         $bin-dir.child($_.value).unlink for %files.grep: {$_.key ~~ /^bin\//};
         $sources-dir.child($_).unlink for %provides.map(*.value<pm><file>);
         $resources-dir.child($_).unlink for %files.values;
@@ -411,10 +413,12 @@ sub MAIN(:$name is copy, :$auth, :$ver, *@, *%) {
     }
 
     method need-repository(CompUnit::RepositorySpecification $spec) {
-        my $repository = $.prefix.child('repositories').child($spec.short-id);
-        # TODO: Need some way to decide on which repo inside the sid-dir to pick
-        return self.need(CompUnit::DependencySpecification(short-name => $repository.slurp))
-            if $repository.e;
+        my @repositories = $.prefix
+            .child('repositories').child($spec.short-id)
+            .lines.map(CompUnit::DependencySpecification.parse-rep-spec(*)).grep($spec === *);
+        return self.need(@repositories[0]) if @repositories.elems == 1;
+        return Failure.new("More than one repository matches:\n\t{ join "\n\t", @repositories }")
+            if @repositories.elems > 1;
         return self.next-repo.need-repository($spec) if self.next-repo;
         CompUnit::Repository::Unknown
     }

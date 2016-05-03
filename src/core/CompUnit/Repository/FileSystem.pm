@@ -96,11 +96,13 @@ class CompUnit::Repository::FileSystem does CompUnit::Repository::Locally does C
         if (my $meta = $!prefix.child('META6.json')) && $meta.f {
             try {
                 my $json = from-json $meta.slurp;
-                if $json<provides-repository>{$spec.short-id} -> $name {
-                    return self.need:
-                        CompUnit::DependencySpecification.new(short-name => $name)
-                }
-
+                my @repositories = $json<provides-repository>.pairs
+                    .grep(*.key ~~ $spec.short-id)
+                    .map(CompUnit::DependencySpecification.parse(*.value))
+                    .grep($spec === *);
+                return self.need(@repositories[0]) if @repositories.elems == 1;
+                return Failure.new("More than one repository matches:\n\t{ join "\n\t", @repositories }")
+                    if @repositories.elems > 1;
                 CATCH {
                     when JSONException {
                         fail "Invalid JSON found in META6.json";
